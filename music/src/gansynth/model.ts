@@ -243,6 +243,30 @@ class GANSynth {
   }
 
   /**
+   * Creates samples of LogMelSpecgram and IFreq from integer pitch.
+   *
+   * @param pitch Integer MIDI pitch number of sound to generate.
+   * @returns specgrams a 4-D Tensor size [batch, time, freq, ch].
+   *    First channel is LogMelSpectrogram and
+   *    second channel is InstantaneousFrequency.
+   */
+  oneTimbreMultiplePitches(z_: Float32Array, pitches: number[]) {
+  return tf.tidy(() => {
+  const zBuff = tf.zeros([pitches.length, this.nLatents], 'float32');
+  const z = tf.add(zBuff, tf.tensor1d(z_, 'float32').expandDims(0)) as tf.Tensor2D;
+      // Get one hot for pitch encoding
+      const pitchIdxMidi = tf.tensor1d(pitches, 'int32');
+      const pitchIdx = tf.sub(pitchIdxMidi, tf.scalar(this.minMidiPitch, 'int32'));
+      const pitchOneHot = tf.oneHot(pitchIdx, this.midiPitches);
+      // Concat and add width and height dimensions.
+      const cond = tf.concat([z, pitchOneHot], 1).expandDims(1).expandDims(1) as
+          tf.Tensor4D;
+      const specgrams = this.predict(cond, pitches.length);
+      return specgrams;
+    });
+  }
+
+  /**
    * Include specgramsToAudio as a member method for API/export.
    *
    * @param specgrams a 4-D Tensor size [batch, time, freq, ch].
@@ -250,8 +274,14 @@ class GANSynth {
    *    second channel is InstantaneousFrequency.
    * @returns Float32Array of audio samples for first specgram in the batch.
    */
-  specgramsToAudio(specgrams: tf.Tensor4D) {
-    return specgramsToAudio(specgrams);
+   async specgramsToAudio(specgrams: tf.Tensor4D, i: number) {
+   const specgram = tf.slice4d(
+   specgrams,
+   [i, 0, 0, 0],
+   [1, specgrams.shape[1], specgrams.shape[2], specgrams.shape[3]]);
+   const waveform = await specgramsToAudio(specgram);
+   specgram.dispose();
+   return waveform;
   }
 }
 
